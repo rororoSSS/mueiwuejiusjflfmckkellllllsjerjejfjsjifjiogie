@@ -92,7 +92,6 @@
             font-size: 0.9rem;
             border: 1px solid #00ffcc;
         }
-        /* 當前拍攝顏色提示 */
         #color-toast {
             position: absolute;
             top: 20px;
@@ -104,19 +103,46 @@
             border-radius: 20px;
             display: none;
         }
+
+        /* 📸 新增：下載圖片彈出遮罩層樣式 */
+        #download-overlay {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100vw; height: 100vh;
+            background: rgba(0, 0, 0, 0.95);
+            z-index: 999;
+            display: none;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+        #download-img {
+            max-width: 85vw;
+            max-height: 70vh;
+            border: 2px solid #00ffcc;
+            box-shadow: 0 0 20px rgba(0, 255, 204, 0.5);
+            border-radius: 10px;
+        }
     </style>
 </head>
 <body>
 
     <p id="loading">loading...</p>
-    <div id="color-toast">當前線條顏色</div>
+    <div id="color-toast">current color</div>
+
+    <div id="download-overlay">
+        <p style="color: #00ffcc; font-weight: bold; margin-bottom: 10px;">save photo</p>
+        <img id="download-img" src="" alt="大合照">
+        <br>
+        <button onclick="document.getElementById('download-overlay').style.display='none'" style="border-color: #ff0055; color: #ff0055;">close window, keep editting</button>
+    </div>
 
     <div id="setup-panel" class="setup-ui">
         <h3>stick family</h3>
-        <label>how many photos？ </label>
+        <label>how many？ </label>
         <input type="number" id="photo-count" value="3" min="1" max="10" style="width: 50px; text-align:center;">
         <br><br>
-        <button onclick="startCaptureFlow()">start！</button>
+        <button onclick="startCaptureFlow()">start</button>
     </div>
 
     <div id="countdown">3</div>
@@ -128,8 +154,8 @@
 
     <div id="stage-container">
         <div style="position:absolute; top:10px; z-index:9; width:100%; text-align:center;">
-            <p style="margin:5px 0; color:#fff;">layout and download</p>
-            <button onclick="downloadPoster()" style="border-color:#ff0055; color:#ff0055; font-weight:bold; box-shadow: 0 0 10px rgba(255,0,85,0.5);">💾 下載大合照 (PNG)</button>
+            <p style="margin:5px 0; color:#fff;">layout and save</p>
+            <button onclick="downloadPoster()" style="border-color:#ff0055; color:#ff0055; font-weight:bold; box-shadow: 0 0 10px rgba(255,0,85,0.5);">generate photo</button>
             <button onclick="location.reload()">start again</button>
         </div>
         <canvas id="edit_canvas"></canvas>
@@ -151,15 +177,14 @@
         let totalPhotos = 3;
         let currentPhotoIndex = 0;
         let savedImages = []; 
-        let fabricCanvas = null; // Fabric 畫布實例
+        let fabricCanvas = null; 
 
-        // 🌈 預設的霓虹經典五彩色票清單 (可以自己增減或改色碼)
         const NEON_COLORS = [
-            { name: "霓虹綠", facePose: "#00ffcc", handLine: "#ffffff", handGlow: "#ff0055" },
-            { name: "魔幻粉", facePose: "#ff0055", handLine: "#ffffff", handGlow: "#00ffcc" },
-            { name: "閃耀黃", facePose: "#ffff00", handLine: "#ffffff", handGlow: "#ff00ff" },
-            { name: "電光藍", facePose: "#0077ff", handLine: "#ffffff", handGlow: "#ffff00" },
-            { name: "魅惑紫", facePose: "#b300ff", handLine: "#ffffff", handGlow: "#00ffcc" }
+            { name: "green", facePose: "#00ffcc", handLine: "#ffffff", handGlow: "#ff0055" },
+            { name: "pink", facePose: "#ff0055", handLine: "#ffffff", handGlow: "#00ffcc" },
+            { name: "yellow", facePose: "#ffff00", handLine: "#ffffff", handGlow: "#ff00ff" },
+            { name: "blue", facePose: "#0077ff", handLine: "#ffffff", handGlow: "#ffff00" },
+            { name: "purple", facePose: "#b300ff", handLine: "#ffffff", handGlow: "#00ffcc" }
         ];
 
         // 初始化 MediaPipe
@@ -177,7 +202,6 @@
 
         function getDistance(p1, p2) { return Math.hypot(p1.x - p2.x, p1.y - p2.y); }
 
-        // 繪圖迴圈
         function drawScene() {
             if (canvasElement.width !== videoElement.videoWidth && videoElement.videoWidth > 0) {
                 canvasElement.width = videoElement.videoWidth;
@@ -194,15 +218,11 @@
             const w = canvasElement.width;
             const h = canvasElement.height;
 
-            // 🎯 【動態取色】根據當前拍到第幾張，自動決定要畫什麼顏色
             const colorTheme = NEON_COLORS[currentPhotoIndex % NEON_COLORS.length];
 
-            // ─── 繪製臉部 ───
             if (latestFaceResults && latestFaceResults.multiFaceLandmarks) {
-                canvasCtx.shadowColor = colorTheme.facePose; 
-                canvasCtx.strokeStyle = colorTheme.facePose;
-                canvasCtx.fillStyle = colorTheme.facePose; 
-                canvasCtx.lineWidth = 4; canvasCtx.lineCap = 'round';
+                canvasCtx.shadowColor = colorTheme.facePose; canvasCtx.strokeStyle = colorTheme.facePose;
+                canvasCtx.fillStyle = colorTheme.facePose; canvasCtx.lineWidth = 4; canvasCtx.lineCap = 'round';
 
                 for (const landmarks of latestFaceResults.multiFaceLandmarks) {
                     const leftOuter = landmarks[33], leftInner = landmarks[133], leftTop = landmarks[159], leftBottom = landmarks[145];
@@ -245,12 +265,9 @@
                 }
             }
 
-            // ─── 繪製身體 ───
             if (latestPoseResults && latestPoseResults.poseLandmarks) {
                 const poseLandmarks = latestPoseResults.poseLandmarks;
-                canvasCtx.shadowColor = colorTheme.facePose; 
-                canvasCtx.strokeStyle = colorTheme.facePose; 
-                canvasCtx.lineWidth = 5;
+                canvasCtx.shadowColor = colorTheme.facePose; canvasCtx.strokeStyle = colorTheme.facePose; canvasCtx.lineWidth = 5;
                 const pt11 = poseLandmarks[11], pt12 = poseLandmarks[12], pt13 = poseLandmarks[13], pt14 = poseLandmarks[14], pt15 = poseLandmarks[15], pt16 = poseLandmarks[16];
                 
                 if (poseLandmarks[11]?.visibility > 0.5 && poseLandmarks[12]?.visibility > 0.5) {
@@ -264,11 +281,8 @@
                 }
             }
 
-            // ─── 繪製手部 ───
             if (latestHandResults && latestHandResults.multiHandLandmarks) {
-                canvasCtx.shadowColor = colorTheme.handGlow; 
-                canvasCtx.strokeStyle = colorTheme.handLine; 
-                canvasCtx.lineWidth = 3;
+                canvasCtx.shadowColor = colorTheme.handGlow; canvasCtx.strokeStyle = colorTheme.handLine; canvasCtx.lineWidth = 3;
                 const connections = window.HAND_CONNECTIONS || (typeof HAND_CONNECTIONS !== 'undefined' ? HAND_CONNECTIONS : null);
                 if (connections) {
                     for (const landmarks of latestHandResults.multiHandLandmarks) {
@@ -286,7 +300,6 @@
             requestAnimationFrame(drawScene);
         }
 
-        // 📸 拍照流程
         function startCaptureFlow() {
             totalPhotos = parseInt(document.getElementById('photo-count').value) || 3;
             currentPhotoIndex = 0;
@@ -302,7 +315,6 @@
                 return;
             }
 
-            // 顯示當前這張照片分配到的霓虹顏色提示
             const theme = NEON_COLORS[currentPhotoIndex % NEON_COLORS.length];
             colorToast.innerText = `第 ${currentPhotoIndex + 1} 張顏色：${theme.name}`;
             colorToast.style.borderColor = theme.facePose;
@@ -321,7 +333,7 @@
                     clearInterval(timer);
                     countdownEl.style.display = 'none';
                     takeSnapshot();
-                    currentPhotoIndex++; // 切換到下一個顏色
+                    currentPhotoIndex++;
                     setTimeout(triggerCountdown, 1200);
                 }
             }, 1000);
@@ -331,14 +343,12 @@
             const dataUrl = canvasElement.toDataURL("image/png");
             savedImages.push(dataUrl);
             
-            // 閃光特效
             const flash = document.createElement('div');
             flash.style = "position:absolute; top:0; left:0; width:100vw; height:100vh; background:#fff; z-index:99; opacity:1; transition:opacity 0.4s;";
             document.body.appendChild(flash);
             setTimeout(() => { flash.style.opacity = 0; setTimeout(() => flash.remove(), 400); }, 50);
         }
 
-        // 🎨 進入黑色拼貼編輯舞台
         function enterEditStage() {
             containerElement.style.display = 'none';
             document.getElementById('stage-container').style.display = 'flex';
@@ -347,14 +357,12 @@
             editCanvasElement.width = window.innerWidth;
             editCanvasElement.height = window.innerHeight;
 
-            // 初始化 Fabric 畫布
             fabricCanvas = new fabric.Canvas('edit_canvas', {
                 backgroundColor: '#000000',
                 width: window.innerWidth,
                 height: window.innerHeight
             });
 
-            // 疊加拍好的彩色火柴人
             savedImages.forEach((imgSrc, index) => {
                 fabric.Image.fromURL(imgSrc, function(oImg) {
                     oImg.scale(0.75);
@@ -372,28 +380,27 @@
             });
         }
 
-        // 💾 【全新功能】將大家排版好的作品下載存檔
+        // 🎯 【關鍵修改】不再使用隱藏下載，改用長按圖片視窗
         function downloadPoster() {
             if (!fabricCanvas) return;
             
-            // 為了確保下載時不會把控制圖片的外框和旋轉鈕也拍進去，下載前先清除選取狀態
+            // 先隱藏正在編輯的選取框線
             fabricCanvas.discardActiveObject();
             fabricCanvas.requestRenderAll();
 
-            // 在渲染完成後執行下載
             setTimeout(() => {
+                // 將畫布轉成高畫質 PNG Base64 數據
                 const dataURL = fabricCanvas.toDataURL({
                     format: 'png',
                     quality: 1.0
                 });
 
-                // 建立虛擬超連結觸發瀏覽器下載
-                const link = document.createElement('a');
-                link.download = `neon-stickman-${Date.now()}.png`; // 檔名包含時間戳記
-                link.href = dataURL;
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
+                // 把數據塞進彈出視窗的 <img> 標籤內
+                const downloadImg = document.getElementById('download-img');
+                downloadImg.src = dataURL;
+
+                // 顯示彈出遮罩層，讓使用者能安全長按儲存
+                document.getElementById('download-overlay').style.display = 'flex';
             }, 100);
         }
 
@@ -408,7 +415,7 @@
                     drawScene();
                     tickAI();
                 });
-            } catch (err) { alert("無法開啟相機，請確認權限！"); }
+            } catch (err) { alert("cannot open camera"); }
         }
 
         async function tickAI() {
