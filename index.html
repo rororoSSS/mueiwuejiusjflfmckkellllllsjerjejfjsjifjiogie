@@ -202,7 +202,8 @@
 
         function getDistance(p1, p2) { return Math.hypot(p1.x - p2.x, p1.y - p2.y); }
 
-function drawScene() {
+        // 控制身體位置的地方
+        function drawScene() {
             if (canvasElement.width !== videoElement.videoWidth && videoElement.videoWidth > 0) {
                 canvasElement.width = videoElement.videoWidth;
                 canvasElement.height = videoElement.videoHeight;
@@ -220,9 +221,10 @@ function drawScene() {
 
             const colorTheme = NEON_COLORS[currentPhotoIndex % NEON_COLORS.length];
 
-            // ─── 1. 繪製臉部（把消失的臉補回來！新增近/遠智能切換機制） ───
+            // ─── 1. 繪製臉部 ───
             let faceDrawn = false; 
 
+            // 修正關鍵：除了判斷變數存在，更要確保裡面真的有偵測到人臉資料 (length > 0)
             if (latestFaceResults && latestFaceResults.multiFaceLandmarks && latestFaceResults.multiFaceLandmarks.length > 0) {
                 const landmarks = latestFaceResults.multiFaceLandmarks[0];
                 
@@ -235,7 +237,7 @@ function drawScene() {
                 let eyeScaleLeft = 15; if (leftOuter && leftInner) eyeScaleLeft = getDistance(leftOuter, leftInner) * w * 0.5;
                 let eyeScaleRight = 15; if (rightOuter && rightInner) eyeScaleRight = getDistance(rightOuter, rightInner) * w * 0.5;
 
-                // 左眼
+                // 精細左眼
                 if (leftOuter && leftInner && leftTop && leftBottom) {
                     const centerX = (leftOuter.x + leftInner.x) / 2 * w;
                     const centerY = (leftOuter.y + leftInner.y) / 2 * h;
@@ -243,7 +245,7 @@ function drawScene() {
                     if (getDistance(leftTop, leftBottom) > 0.015) { canvasCtx.arc(centerX, centerY, eyeScaleLeft, 0, 2 * Math.PI); canvasCtx.fill(); }
                     else { canvasCtx.moveTo(leftOuter.x * w, leftOuter.y * h); canvasCtx.lineTo(leftInner.x * w, leftInner.y * h); canvasCtx.stroke(); }
                 }
-                // 右眼
+                // 精細右眼
                 if (rightOuter && rightInner && rightTop && rightBottom) {
                     const centerX = (rightOuter.x + rightInner.x) / 2 * w;
                     const centerY = (rightOuter.y + rightInner.y) / 2 * h;
@@ -252,7 +254,7 @@ function drawScene() {
                     else { canvasCtx.moveTo(rightOuter.x * w, rightOuter.y * h); canvasCtx.lineTo(rightInner.x * w, rightInner.y * h); canvasCtx.stroke(); }
                 }
 
-                // 嘴巴（黃金比例變短上抬版）
+                // 精細嘴巴（Q 版變短上抬）
                 const leftCorner = landmarks[61], rightCorner = landmarks[291];
                 if (leftCorner && rightCorner) {
                     const lx = leftCorner.x * w, ly = leftCorner.y * h, rx = rightCorner.x * w, ry = rightCorner.y * h;
@@ -272,33 +274,37 @@ function drawScene() {
                 faceDrawn = true; 
             }
 
-            // 🚨 遠距離備用臉部（站遠時 Face Mesh 斷訊，自動改由 Pose 點位接管畫臉，保證不見首不見尾）
+            // 🚨 【智能救援核心】當精細人臉不見了，改由全身 Pose 點位強制在原位畫出大眼短嘴！
             if (!faceDrawn && latestPoseResults && latestPoseResults.poseLandmarks) {
                 const poseLandmarks = latestPoseResults.poseLandmarks;
-                const nose = poseLandmarks[0];   
-                const leftEye = poseLandmarks[2]; 
-                const rightEye = poseLandmarks[5];
+                const nose = poseLandmarks[0];   // 鼻尖
+                const leftEye = poseLandmarks[2]; // 左眼
+                const rightEye = poseLandmarks[5];// 右眼
 
                 canvasCtx.shadowColor = colorTheme.facePose; canvasCtx.strokeStyle = colorTheme.facePose;
                 canvasCtx.fillStyle = colorTheme.facePose; canvasCtx.lineWidth = 4; canvasCtx.lineCap = 'round';
 
-                if (leftEye && rightEye && leftEye.visibility > 0.5 && rightEye.visibility > 0.5) {
+                if (leftEye && rightEye && leftEye.visibility > 0.3 && rightEye.visibility > 0.3) {
                     const pDist = getDistance(leftEye, rightEye) * w;
-                    const backupEyeScale = pDist * 0.25; 
+                    // 將備用眼睛尺寸拉大，維持 Q 版可愛感
+                    const backupEyeScale = Math.max(pDist * 0.28, 6); 
 
+                    // 1. 畫左眼備用圓點
                     canvasCtx.beginPath();
                     canvasCtx.arc(leftEye.x * w, leftEye.y * h, backupEyeScale, 0, 2 * Math.PI);
                     canvasCtx.fill();
 
+                    // 2. 畫右眼備用圓點
                     canvasCtx.beginPath();
                     canvasCtx.arc(rightEye.x * w, rightEye.y * h, backupEyeScale, 0, 2 * Math.PI);
                     canvasCtx.fill();
 
-                    if (nose && nose.visibility > 0.5) {
+                    // 3. 畫嘴巴備用直線
+                    if (nose && nose.visibility > 0.3) {
                         const bMouthWidth = backupEyeScale * 2.2;
                         const eCenterY = (leftEye.y + rightEye.y) / 2 * h;
                         const nY = nose.y * h;
-                        const bMouthY = nY - (nY - eCenterY) * 0.2;
+                        const bMouthY = nY - (nY - eCenterY) * 0.15; // 稍微往上移靠近眼睛
 
                         canvasCtx.beginPath();
                         canvasCtx.moveTo(nose.x * w - bMouthWidth / 2, bMouthY);
@@ -308,12 +314,10 @@ function drawScene() {
                 }
             }
 
-            // ─── 2. 繪製身體（全身解鎖版骨架，移除原本重複的區塊） ───
+            // ─── 2. 繪製身體 ───
             if (latestPoseResults && latestPoseResults.poseLandmarks) {
                 const poseLandmarks = latestPoseResults.poseLandmarks;
-                canvasCtx.shadowColor = colorTheme.facePose; 
-                canvasCtx.strokeStyle = colorTheme.facePose; 
-                canvasCtx.lineWidth = 5;
+                canvasCtx.shadowColor = colorTheme.facePose; canvasCtx.strokeStyle = colorTheme.facePose; canvasCtx.lineWidth = 5;
                 
                 const pt11 = poseLandmarks[11], pt12 = poseLandmarks[12]; 
                 const pt13 = poseLandmarks[13], pt14 = poseLandmarks[14]; 
@@ -323,19 +327,19 @@ function drawScene() {
                 const pt25 = poseLandmarks[25], pt26 = poseLandmarks[26]; 
                 const pt27 = poseLandmarks[27], pt28 = poseLandmarks[28]; 
 
-                // 畫肩膀
+                // 肩膀
                 if (poseLandmarks[11]?.visibility > 0.5 && poseLandmarks[12]?.visibility > 0.5) {
                     canvasCtx.beginPath(); canvasCtx.moveTo(pt11.x * w, pt11.y * h); canvasCtx.lineTo(pt12.x * w, pt12.y * h); canvasCtx.stroke();
                 }
-                // 畫左手臂
+                // 左臂
                 if (poseLandmarks[13]?.visibility > 0.5) {
                     canvasCtx.beginPath(); canvasCtx.moveTo(pt11.x * w, pt11.y * h); canvasCtx.lineTo(pt13.x * w, pt13.y * h); canvasCtx.lineTo(pt15.x * w, pt15.y * h); canvasCtx.stroke();
                 }
-                // 畫右手臂
+                // 右臂
                 if (poseLandmarks[14]?.visibility > 0.5) {
                     canvasCtx.beginPath(); canvasCtx.moveTo(pt12.x * w, pt12.y * h); canvasCtx.lineTo(pt14.x * w, pt14.y * h); canvasCtx.lineTo(pt16.x * w, pt16.y * h); canvasCtx.stroke();
                 }
-                // 畫軀幹與臀部
+                // 軀幹
                 if (poseLandmarks[23]?.visibility > 0.5 && poseLandmarks[24]?.visibility > 0.5) {
                     canvasCtx.beginPath(); 
                     canvasCtx.moveTo(pt11.x * w, pt11.y * h); canvasCtx.lineTo(pt23.x * w, pt23.y * h); 
@@ -343,17 +347,17 @@ function drawScene() {
                     canvasCtx.lineTo(pt23.x * w, pt23.y * h); 
                     canvasCtx.stroke();
                 }
-                // 畫左腳
+                // 左腳
                 if (poseLandmarks[25]?.visibility > 0.5) {
                     canvasCtx.beginPath(); canvasCtx.moveTo(pt23.x * w, pt23.y * h); canvasCtx.lineTo(pt25.x * w, pt25.y * h); canvasCtx.lineTo(pt27.x * w, pt27.y * h); canvasCtx.stroke();
                 }
-                // 畫右腳
+                // 右腳
                 if (poseLandmarks[26]?.visibility > 0.5) {
                     canvasCtx.beginPath(); canvasCtx.moveTo(pt24.x * w, pt24.y * h); canvasCtx.lineTo(pt26.x * w, pt26.y * h); canvasCtx.lineTo(pt28.x * w, pt28.y * h); canvasCtx.stroke();
                 }
             }
 
-            // ─── 3. 繪製手部（保持乾淨的線條骨架） ───
+            // ─── 3. 繪製手部 ───
             if (latestHandResults && latestHandResults.multiHandLandmarks) {
                 canvasCtx.shadowColor = colorTheme.handGlow; canvasCtx.strokeStyle = colorTheme.handLine; canvasCtx.lineWidth = 3;
                 const connections = window.HAND_CONNECTIONS || (typeof HAND_CONNECTIONS !== 'undefined' ? HAND_CONNECTIONS : null);
@@ -373,7 +377,7 @@ function drawScene() {
             requestAnimationFrame(drawScene);
         }
         
-
+            // 下一段開始
             if (latestPoseResults && latestPoseResults.poseLandmarks) {
                 const poseLandmarks = latestPoseResults.poseLandmarks;
                 canvasCtx.shadowColor = colorTheme.facePose; canvasCtx.strokeStyle = colorTheme.facePose; canvasCtx.lineWidth = 5;
