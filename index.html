@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>終極霓虹火柴人 - 多人卡通線條版</title>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+            text-align: center;
+            background-color: #000000;
+            color: #00ffcc;
+            margin: 0;
+            padding: 0;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+        }
+        .video-container {
+            position: relative;
+            width: 90vw;
+            max-width: 640px;
+            aspect-ratio: 3 / 4; 
+            border-radius: 20px;
+            overflow: hidden;
+            background-color: #000000;
+            box-shadow: 0 0 40px rgba(0, 255, 170, 0.2);
+        }
+        #webcam {
+            display: none; 
+        }
+        #output_canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 2;
+        }
+        #loading {
+            position: absolute;
+            z-index: 3;
+            color: #00ffcc;
+            font-weight: bold;
+            background: rgba(0,0,0,0.85);
+            padding: 14px 28px;
+            border-radius: 30px;
+            font-size: 0.9rem;
+            border: 1px solid #00ffcc;
+        }
+    </style>
+</head>
+<body>
+
+    <p id="loading">動態多人火柴人系統載入中...</p>
+
+    <div id="container" class="video-container">
+        <video id="webcam" autoplay playsinline muted></video>
+        <canvas id="output_canvas"></canvas>
+    </div>
+
+    <script>
+        const videoElement = document.getElementById('webcam');
+        const canvasElement = document.getElementById('output_canvas');
+        const containerElement = document.getElementById('container');
+        const canvasCtx = canvasElement.getContext('2d');
+        const loadingText = document.getElementById('loading');
+
+        let latestFaceResults = null;
+        let latestHandResults = null;
+        let latestPoseResults = null;
+
+        // 1. 初始化 Face Mesh（修改：支援最多 4 張臉）
+        const faceMesh = new FaceMesh({
+            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
+        });
+        faceMesh.setOptions({
+            maxNumFaces: 4, 
+            refineLandmarks: true,
+            minDetectionConfidence: 0.5,
+            minTrackingConfidence: 0.5
+        });
+        faceMesh.onResults(results => {
+            latestFaceResults = results;
+            if (loadingText) loadingText.style.display = 'none';
+        });
+
+        // 2. 初始化 Hands（修改：支援最多 8 隻手）
+        const hands = new Hands({
+            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+        });
+        hands.setOptions({
+            maxNumHands: 8, 
+            modelComplexity: 1,
+            minDetectionConfidence: 0.5,
+            minTrackingConfidence: 0.5
+        });
+        hands.onResults(results => {
+            latestHandResults = results;
+        });
+
+        // 3. 初始化 Pose（注意：此單獨套件原生僅支援主體 1 人）
+        const pose = new Pose({
+            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
+        });
+        pose.setOptions({
+            modelComplexity: 1,
+            smoothLandmarks: true,
+            minDetectionConfidence: 0.5,
+            minTrackingConfidence: 0.5
+        });
+        pose.onResults(results => {
+            latestPoseResults = results;
+        });
+
+        function getDistance(p1, p2) {
+            return Math.hypot(p1.x - p2.x, p1.y - p2.y);
+        }
+
+        // 4. 霓虹繪圖迴圈
+        function drawScene() {
+            if (canvasElement.width !== videoElement.videoWidth && videoElement.videoWidth > 0) {
+                canvasElement.width = videoElement.videoWidth;
+                canvasElement.height = videoElement.videoHeight;
+                containerElement.style.aspectRatio = `${videoElement.videoWidth} / ${videoElement.videoHeight}`;
+            }
+
+            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+            
+            canvasCtx.save();
+            canvasCtx.translate(canvasElement.width, 0);
+            canvasCtx.scale(-1, 1);
+
+            canvasCtx.shadowBlur = 15;
+            const w = canvasElement.width;
+            const h = canvasElement.height;
+
+            // ─── 繪製「多人」五官 ───
+            if (latestFaceResults && latestFaceResults.multiFaceLandmarks) {
+                canvasCtx.shadowColor = '#00ffcc';
+                canvasCtx.strokeStyle = '#00ffcc';
+                canvasCtx.fillStyle = '#00ffcc';
+                canvasCtx.lineWidth = 4;
+                canvasCtx.lineCap = 'round';
+
+                // 用迴圈跑出畫面中的每張臉
+                for (const landmarks of latestFaceResults.multiFaceLandmarks) {
+                    const leftOuter = landmarks[33], leftInner = landmarks[133], leftTop = landmarks[159], leftBottom = landmarks[145];
+                    const rightOuter = landmarks[263], rightInner = landmarks[362], rightTop = landmarks[386], rightBottom = landmarks[374];
+
+                    let eyeScaleLeft = 15;
+                    if (leftOuter && leftInner) eyeScaleLeft = getDistance(leftOuter, leftInner) * w * 0.5;
+                    let eyeScaleRight = 15;
+                    if (rightOuter && rightInner) eyeScaleRight = getDistance(rightOuter, rightInner) * w * 0.5;
+
+                    // 左眼
+                    if (leftOuter && leftInner && leftTop && leftBottom) {
+                        const centerX = (leftOuter.x + leftInner.x) / 2 * w;
+                        const centerY = (leftOuter.y + leftInner.y) / 2 * h;
+                        const eyeDist = getDistance(leftTop, leftBottom);
+                        canvasCtx.beginPath();
+                        if (eyeDist > 0.015) {
+                            canvasCtx.arc(centerX, centerY, eyeScaleLeft, 0, 2 * Math.PI);
+                            canvasCtx.fill();
+                        } else {
+                            canvasCtx.moveTo(leftOuter.x * w, leftOuter.y * h);
+                            canvasCtx.lineTo(leftInner.x * w, leftInner.y * h);
+                            canvasCtx.stroke();
+                        }
+                    }
+
+                    // 右眼
+                    if (rightOuter && rightInner && rightTop && rightBottom) {
+                        const centerX = (rightOuter.x + rightInner.x) / 2 * w;
+                        const centerY = (rightOuter.y + rightInner.y) / 2 * h;
+                        const eyeDist = getDistance(rightTop, rightBottom);
+                        canvasCtx.beginPath();
+                        if (eyeDist > 0.015) {
+                            canvasCtx.arc(centerX, centerY, eyeScaleRight, 0, 2 * Math.PI);
+                            canvasCtx.fill();
+                        } else {
+                            canvasCtx.moveTo(rightOuter.x * w, rightOuter.y * h);
+                            canvasCtx.lineTo(rightInner.x * w, rightInner.y * h);
+                            canvasCtx.stroke();
+                        }
+                    }
+
+                    // 嘴巴（黃金比例變短上抬版）
+                    const leftCorner = landmarks[61];
+                    const rightCorner = landmarks[291];
+
+                    if (leftCorner && rightCorner) {
+                        const lx = leftCorner.x * w;
+                        const ly = leftCorner.y * h;
+                        const rx = rightCorner.x * w;
+                        const ry = rightCorner.y * h;
+
+                        const mouthCenterX = (lx + rx) / 2;
+                        const mouthCenterY = (ly + ry) / 2;
+                        const vectorX = rx - lx;
+                        const vectorY = ry - ly;
+
+                        const shortenFactor = 0.65; 
+                        const halfShortX = (vectorX * shortenFactor) / 2;
+                        const halfShortY = (vectorY * shortenFactor) / 2;
+
+                        const eyeLX = landmarks[133].x * w;
+                        const eyeLY = landmarks[133].y * h;
+                        const eyeRX = landmarks[362].x * w;
+                        const eyeRY = landmarks[362].y * h;
+                        const eyeCenterX = (eyeLX + eyeRX) / 2;
+                        const eyeCenterY = (eyeLY + eyeRY) / 2;
+
+                        const toEyeX = eyeCenterX - mouthCenterX;
+                        const toEyeY = eyeCenterY - mouthCenterY;
+
+                        const liftFactor = 0.45; 
+                        const finalCenterX = mouthCenterX + toEyeX * liftFactor;
+                        const finalCenterY = mouthCenterY + toEyeY * liftFactor;
+
+                        const startX = finalCenterX - halfShortX;
+                        const startY = finalCenterY - halfShortY;
+                        const endX = finalCenterX + halfShortX;
+                        const endY = finalCenterY + halfShortY;
+
+                        canvasCtx.beginPath();
+                        canvasCtx.moveTo(startX, startY);
+                        canvasCtx.lineTo(endX, endY);
+                        canvasCtx.stroke();
+                    }
+                }
+            }
+
+            // ─── 繪製身體骨架（鎖定主體目標 1 人） ───
+            if (latestPoseResults && latestPoseResults.poseLandmarks) {
+                const poseLandmarks = latestPoseResults.poseLandmarks;
+                canvasCtx.shadowColor = '#00ffcc';
+                canvasCtx.strokeStyle = '#00ffcc';
+                canvasCtx.lineWidth = 5;
+
+                const pt11 = poseLandmarks[11];
+                const pt12 = poseLandmarks[12];
+                const pt13 = poseLandmarks[13];
+                const pt14 = poseLandmarks[14];
+                const pt15 = poseLandmarks[15];
+                const pt16 = poseLandmarks[16];
+
+                if (pt11 && pt12 && pt11.visibility > 0.5 && pt12.visibility > 0.5) {
+                    canvasCtx.beginPath();
+                    canvasCtx.moveTo(pt11.x * w, pt11.y * h);
+                    canvasCtx.lineTo(pt12.x * w, pt12.y * h);
+                    canvasCtx.stroke();
+                }
+                if (pt11 && pt13 && pt15 && pt13.visibility > 0.5) {
+                    canvasCtx.beginPath();
+                    canvasCtx.moveTo(pt11.x * w, pt11.y * h);
+                    canvasCtx.lineTo(pt13.x * w, pt13.y * h);
+                    canvasCtx.lineTo(pt15.x * w, pt15.y * h);
+                    canvasCtx.stroke();
+                }
+                if (pt12 && pt14 && pt16 && pt14.visibility > 0.5) {
+                    canvasCtx.beginPath();
+                    canvasCtx.moveTo(pt12.x * w, pt12.y * h);
+                    canvasCtx.lineTo(pt14.x * w, pt14.y * h);
+                    canvasCtx.lineTo(pt16.x * w, pt16.y * h);
+                    canvasCtx.stroke();
+                }
+            }
+
+            // ─── 繪製「多人」手部（所有出現在畫面中的手都會畫出骨架） ───
+            if (latestHandResults && latestHandResults.multiHandLandmarks) {
+                canvasCtx.shadowColor = '#ff0055'; 
+                canvasCtx.strokeStyle = '#ffffff'; 
+                canvasCtx.lineWidth = 3;
+
+                const connections = window.HAND_CONNECTIONS || (typeof HAND_CONNECTIONS !== 'undefined' ? HAND_CONNECTIONS : null);
+                if (connections) {
+                    for (const landmarks of latestHandResults.multiHandLandmarks) {
+                        for (const connection of connections) {
+                            const firstPt = landmarks[connection[0]];
+                            const secondPt = landmarks[connection[1]];
+                            if (firstPt && secondPt) {
+                                canvasCtx.beginPath();
+                                canvasCtx.moveTo(firstPt.x * w, firstPt.y * h);
+                                canvasCtx.lineTo(secondPt.x * w, secondPt.y * h);
+                                canvasCtx.stroke();
+                            }
+                        }
+                    }
+                }
+            }
+
+            canvasCtx.restore();
+            requestAnimationFrame(drawScene);
+        }
+
+        async function startCamera() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } },
+                    audio: false
+                });
+                videoElement.srcObject = stream;
+                videoElement.addEventListener('loadedmetadata', () => {
+                    drawScene();
+                    tickAI();
+                });
+            } catch (err) {
+                alert("無法開啟相機，請確認權限！");
+            }
+        }
+
+        async function tickAI() {
+            if (videoElement.readyState >= 2) {
+                await faceMesh.send({ image: videoElement });
+                await hands.send({ image: videoElement });
+                await pose.send({ image: videoElement });
+            }
+            requestAnimationFrame(tickAI);
+        }
+
+        window.addEventListener('DOMContentLoaded', startCamera);
+    </script>
+</body>
+</html>
