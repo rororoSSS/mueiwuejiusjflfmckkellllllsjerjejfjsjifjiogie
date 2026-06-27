@@ -220,48 +220,50 @@
 
             const colorTheme = NEON_COLORS[currentPhotoIndex % NEON_COLORS.length];
 
-            if (latestFaceResults && latestFaceResults.multiFaceLandmarks) {
-                canvasCtx.shadowColor = colorTheme.facePose; canvasCtx.strokeStyle = colorTheme.facePose;
-                canvasCtx.fillStyle = colorTheme.facePose; canvasCtx.lineWidth = 4; canvasCtx.lineCap = 'round';
+// ─── 繪製身體（全身解鎖版） ───
+            if (latestPoseResults && latestPoseResults.poseLandmarks) {
+                const poseLandmarks = latestPoseResults.poseLandmarks;
+                canvasCtx.shadowColor = colorTheme.facePose; 
+                canvasCtx.strokeStyle = colorTheme.facePose; 
+                canvasCtx.lineWidth = 5;
+                
+                // 上半身點位
+                const pt11 = poseLandmarks[11], pt12 = poseLandmarks[12]; // 肩
+                const pt13 = poseLandmarks[13], pt14 = poseLandmarks[14]; // 肘
+                const pt15 = poseLandmarks[15], pt16 = poseLandmarks[16]; // 腕
+                
+                // 下半身新增點位
+                const pt23 = poseLandmarks[23], pt24 = poseLandmarks[24]; // 髖部（臀部）
+                const pt25 = poseLandmarks[25], pt26 = poseLandmarks[26]; // 膝蓋
+                const pt27 = poseLandmarks[27], pt28 = poseLandmarks[28]; // 腳踝
 
-                for (const landmarks of latestFaceResults.multiFaceLandmarks) {
-                    const leftOuter = landmarks[33], leftInner = landmarks[133], leftTop = landmarks[159], leftBottom = landmarks[145];
-                    const rightOuter = landmarks[263], rightInner = landmarks[362], rightTop = landmarks[386], rightBottom = landmarks[374];
-
-                    let eyeScaleLeft = 15; if (leftOuter && leftInner) eyeScaleLeft = getDistance(leftOuter, leftInner) * w * 0.5;
-                    let eyeScaleRight = 15; if (rightOuter && rightInner) eyeScaleRight = getDistance(rightOuter, rightInner) * w * 0.5;
-
-                    if (leftOuter && leftInner && leftTop && leftBottom) {
-                        const centerX = (leftOuter.x + leftInner.x) / 2 * w;
-                        const centerY = (leftOuter.y + leftInner.y) / 2 * h;
-                        canvasCtx.beginPath();
-                        if (getDistance(leftTop, leftBottom) > 0.015) { canvasCtx.arc(centerX, centerY, eyeScaleLeft, 0, 2 * Math.PI); canvasCtx.fill(); }
-                        else { canvasCtx.moveTo(leftOuter.x * w, leftOuter.y * h); canvasCtx.lineTo(leftInner.x * w, leftInner.y * h); canvasCtx.stroke(); }
-                    }
-                    if (rightOuter && rightInner && rightTop && rightBottom) {
-                        const centerX = (rightOuter.x + rightInner.x) / 2 * w;
-                        const centerY = (rightOuter.y + rightInner.y) / 2 * h;
-                        canvasCtx.beginPath();
-                        if (getDistance(rightTop, rightBottom) > 0.015) { canvasCtx.arc(centerX, centerY, eyeScaleRight, 0, 2 * Math.PI); canvasCtx.fill(); }
-                        else { canvasCtx.moveTo(rightOuter.x * w, rightOuter.y * h); canvasCtx.lineTo(rightInner.x * w, rightInner.y * h); canvasCtx.stroke(); }
-                    }
-
-                    const leftCorner = landmarks[61], rightCorner = landmarks[291];
-                    if (leftCorner && rightCorner) {
-                        const lx = leftCorner.x * w, ly = leftCorner.y * h, rx = rightCorner.x * w, ry = rightCorner.y * h;
-                        const mouthCenterX = (lx + rx) / 2, mouthCenterY = (ly + ry) / 2;
-                        const shortenFactor = 0.65;
-                        const halfShortX = ((rx - lx) * shortenFactor) / 2, halfShortY = ((ry - ly) * shortenFactor) / 2;
-                        const eyeCenterX = (landmarks[133].x + landmarks[362].x) / 2 * w, eyeCenterY = (landmarks[133].y + landmarks[362].y) / 2 * h;
-                        const liftFactor = 0.45;
-                        const finalCenterX = mouthCenterX + (eyeCenterX - mouthCenterX) * liftFactor;
-                        const finalCenterY = mouthCenterY + (eyeCenterY - mouthCenterY) * liftFactor;
-
-                        canvasCtx.beginPath();
-                        canvasCtx.moveTo(finalCenterX - halfShortX, finalCenterY - halfShortY);
-                        canvasCtx.lineTo(finalCenterX + halfShortX, finalCenterY + halfShortY);
-                        canvasCtx.stroke();
-                    }
+                // 1. 畫肩膀
+                if (poseLandmarks[11]?.visibility > 0.5 && poseLandmarks[12]?.visibility > 0.5) {
+                    canvasCtx.beginPath(); canvasCtx.moveTo(pt11.x * w, pt11.y * h); canvasCtx.lineTo(pt12.x * w, pt12.y * h); canvasCtx.stroke();
+                }
+                // 2. 畫左手臂
+                if (poseLandmarks[13]?.visibility > 0.5) {
+                    canvasCtx.beginPath(); canvasCtx.moveTo(pt11.x * w, pt11.y * h); canvasCtx.lineTo(pt13.x * w, pt13.y * h); canvasCtx.lineTo(pt15.x * w, pt15.y * h); canvasCtx.stroke();
+                }
+                // 3. 畫右手臂
+                if (poseLandmarks[14]?.visibility > 0.5) {
+                    canvasCtx.beginPath(); canvasCtx.moveTo(pt12.x * w, pt12.y * h); canvasCtx.lineTo(pt14.x * w, pt14.y * h); canvasCtx.lineTo(pt16.x * w, pt16.y * h); canvasCtx.stroke();
+                }
+                // 4. 畫軀幹（肩膀連到臀部）
+                if (poseLandmarks[23]?.visibility > 0.5 && poseLandmarks[24]?.visibility > 0.5) {
+                    canvasCtx.beginPath(); 
+                    canvasCtx.moveTo(pt11.x * w, pt11.y * h); canvasCtx.lineTo(pt23.x * w, pt23.y * h); // 左肩到左髖
+                    canvasCtx.moveTo(pt12.x * w, pt12.y * h); canvasCtx.lineTo(pt24.x * w, pt24.y * h); // 右肩到右髖
+                    canvasCtx.lineTo(pt23.x * w, pt23.y * h); // 左右髖相連
+                    canvasCtx.stroke();
+                }
+                // 5. 畫左腳（髖 -> 膝 -> 腳踝）
+                if (poseLandmarks[25]?.visibility > 0.5) {
+                    canvasCtx.beginPath(); canvasCtx.moveTo(pt23.x * w, pt23.y * h); canvasCtx.lineTo(pt25.x * w, pt25.y * h); canvasCtx.lineTo(pt27.x * w, pt27.y * h); canvasCtx.stroke();
+                }
+                // 6. 畫右腳（髖 -> 膝 -> 腳踝）
+                if (poseLandmarks[26]?.visibility > 0.5) {
+                    canvasCtx.beginPath(); canvasCtx.moveTo(pt24.x * w, pt24.y * h); canvasCtx.lineTo(pt26.x * w, pt26.y * h); canvasCtx.lineTo(pt28.x * w, pt28.y * h); canvasCtx.stroke();
                 }
             }
 
