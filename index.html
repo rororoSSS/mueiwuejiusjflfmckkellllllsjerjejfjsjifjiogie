@@ -103,8 +103,6 @@
             border-radius: 20px;
             display: none;
         }
-
-        /* 📸 新增：下載圖片彈出遮罩層樣式 */
         #download-overlay {
             position: fixed;
             top: 0; left: 0;
@@ -202,7 +200,6 @@
 
         function getDistance(p1, p2) { return Math.hypot(p1.x - p2.x, p1.y - p2.y); }
 
-        // 控制身體位置的地方
         function drawScene() {
             if (canvasElement.width !== videoElement.videoWidth && videoElement.videoWidth > 0) {
                 canvasElement.width = videoElement.videoWidth;
@@ -221,10 +218,9 @@
 
             const colorTheme = NEON_COLORS[currentPhotoIndex % NEON_COLORS.length];
 
-            // ─── 1. 繪製臉部 ───
+            // ─── 1. 繪製臉部（整合近遠切換智慧防丟失機制） ───
             let faceDrawn = false; 
 
-            // 修正關鍵：除了判斷變數存在，更要確保裡面真的有偵測到人臉資料 (length > 0)
             if (latestFaceResults && latestFaceResults.multiFaceLandmarks && latestFaceResults.multiFaceLandmarks.length > 0) {
                 const landmarks = latestFaceResults.multiFaceLandmarks[0];
                 
@@ -237,7 +233,7 @@
                 let eyeScaleLeft = 15; if (leftOuter && leftInner) eyeScaleLeft = getDistance(leftOuter, leftInner) * w * 0.5;
                 let eyeScaleRight = 15; if (rightOuter && rightInner) eyeScaleRight = getDistance(rightOuter, rightInner) * w * 0.5;
 
-                // 精細左眼
+                // 左眼
                 if (leftOuter && leftInner && leftTop && leftBottom) {
                     const centerX = (leftOuter.x + leftInner.x) / 2 * w;
                     const centerY = (leftOuter.y + leftInner.y) / 2 * h;
@@ -245,7 +241,7 @@
                     if (getDistance(leftTop, leftBottom) > 0.015) { canvasCtx.arc(centerX, centerY, eyeScaleLeft, 0, 2 * Math.PI); canvasCtx.fill(); }
                     else { canvasCtx.moveTo(leftOuter.x * w, leftOuter.y * h); canvasCtx.lineTo(leftInner.x * w, leftInner.y * h); canvasCtx.stroke(); }
                 }
-                // 精細右眼
+                // 右眼
                 if (rightOuter && rightInner && rightTop && rightBottom) {
                     const centerX = (rightOuter.x + rightInner.x) / 2 * w;
                     const centerY = (rightOuter.y + rightInner.y) / 2 * h;
@@ -254,7 +250,7 @@
                     else { canvasCtx.moveTo(rightOuter.x * w, rightOuter.y * h); canvasCtx.lineTo(rightInner.x * w, rightInner.y * h); canvasCtx.stroke(); }
                 }
 
-                // 精細嘴巴（Q 版變短上抬）
+                // 嘴巴
                 const leftCorner = landmarks[61], rightCorner = landmarks[291];
                 if (leftCorner && rightCorner) {
                     const lx = leftCorner.x * w, ly = leftCorner.y * h, rx = rightCorner.x * w, ry = rightCorner.y * h;
@@ -274,37 +270,33 @@
                 faceDrawn = true; 
             }
 
-            // 🚨 【智能救援核心】當精細人臉不見了，改由全身 Pose 點位強制在原位畫出大眼短嘴！
+            // 🚨 遠距離備用臉部機制
             if (!faceDrawn && latestPoseResults && latestPoseResults.poseLandmarks) {
                 const poseLandmarks = latestPoseResults.poseLandmarks;
-                const nose = poseLandmarks[0];   // 鼻尖
-                const leftEye = poseLandmarks[2]; // 左眼
-                const rightEye = poseLandmarks[5];// 右眼
+                const nose = poseLandmarks[0];   
+                const leftEye = poseLandmarks[2]; 
+                const rightEye = poseLandmarks[5];
 
                 canvasCtx.shadowColor = colorTheme.facePose; canvasCtx.strokeStyle = colorTheme.facePose;
                 canvasCtx.fillStyle = colorTheme.facePose; canvasCtx.lineWidth = 4; canvasCtx.lineCap = 'round';
 
                 if (leftEye && rightEye && leftEye.visibility > 0.3 && rightEye.visibility > 0.3) {
                     const pDist = getDistance(leftEye, rightEye) * w;
-                    // 將備用眼睛尺寸拉大，維持 Q 版可愛感
                     const backupEyeScale = Math.max(pDist * 0.28, 6); 
 
-                    // 1. 畫左眼備用圓點
                     canvasCtx.beginPath();
                     canvasCtx.arc(leftEye.x * w, leftEye.y * h, backupEyeScale, 0, 2 * Math.PI);
                     canvasCtx.fill();
 
-                    // 2. 畫右眼備用圓點
                     canvasCtx.beginPath();
                     canvasCtx.arc(rightEye.x * w, rightEye.y * h, backupEyeScale, 0, 2 * Math.PI);
                     canvasCtx.fill();
 
-                    // 3. 畫嘴巴備用直線
                     if (nose && nose.visibility > 0.3) {
                         const bMouthWidth = backupEyeScale * 2.2;
                         const eCenterY = (leftEye.y + rightEye.y) / 2 * h;
                         const nY = nose.y * h;
-                        const bMouthY = nY - (nY - eCenterY) * 0.15; // 稍微往上移靠近眼睛
+                        const bMouthY = nY - (nY - eCenterY) * 0.15; 
 
                         canvasCtx.beginPath();
                         canvasCtx.moveTo(nose.x * w - bMouthWidth / 2, bMouthY);
@@ -314,7 +306,7 @@
                 }
             }
 
-            // ─── 2. 繪製身體 ───
+            // ─── 2. 繪製身體（全身解鎖版） ───
             if (latestPoseResults && latestPoseResults.poseLandmarks) {
                 const poseLandmarks = latestPoseResults.poseLandmarks;
                 canvasCtx.shadowColor = colorTheme.facePose; canvasCtx.strokeStyle = colorTheme.facePose; canvasCtx.lineWidth = 5;
@@ -358,42 +350,6 @@
             }
 
             // ─── 3. 繪製手部 ───
-            if (latestHandResults && latestHandResults.multiHandLandmarks) {
-                canvasCtx.shadowColor = colorTheme.handGlow; canvasCtx.strokeStyle = colorTheme.handLine; canvasCtx.lineWidth = 3;
-                const connections = window.HAND_CONNECTIONS || (typeof HAND_CONNECTIONS !== 'undefined' ? HAND_CONNECTIONS : null);
-                if (connections) {
-                    for (const landmarks of latestHandResults.multiHandLandmarks) {
-                        for (const connection of connections) {
-                            const firstPt = landmarks[connection[0]], secondPt = landmarks[connection[1]];
-                            if (firstPt && secondPt) {
-                                canvasCtx.beginPath(); canvasCtx.moveTo(firstPt.x * w, firstPt.y * h); canvasCtx.lineTo(secondPt.x * w, secondPt.y * h); canvasCtx.stroke();
-                            }
-                        }
-                    }
-                }
-            }
-
-            canvasCtx.restore();
-            requestAnimationFrame(drawScene);
-        }
-        
-            // 下一段開始
-            if (latestPoseResults && latestPoseResults.poseLandmarks) {
-                const poseLandmarks = latestPoseResults.poseLandmarks;
-                canvasCtx.shadowColor = colorTheme.facePose; canvasCtx.strokeStyle = colorTheme.facePose; canvasCtx.lineWidth = 5;
-                const pt11 = poseLandmarks[11], pt12 = poseLandmarks[12], pt13 = poseLandmarks[13], pt14 = poseLandmarks[14], pt15 = poseLandmarks[15], pt16 = poseLandmarks[16];
-                
-                if (poseLandmarks[11]?.visibility > 0.5 && poseLandmarks[12]?.visibility > 0.5) {
-                    canvasCtx.beginPath(); canvasCtx.moveTo(pt11.x * w, pt11.y * h); canvasCtx.lineTo(pt12.x * w, pt12.y * h); canvasCtx.stroke();
-                }
-                if (poseLandmarks[13]?.visibility > 0.5) {
-                    canvasCtx.beginPath(); canvasCtx.moveTo(pt11.x * w, pt11.y * h); canvasCtx.lineTo(pt13.x * w, pt13.y * h); canvasCtx.lineTo(pt15.x * w, pt15.y * h); canvasCtx.stroke();
-                }
-                if (poseLandmarks[14]?.visibility > 0.5) {
-                    canvasCtx.beginPath(); canvasCtx.moveTo(pt12.x * w, pt12.y * h); canvasCtx.lineTo(pt14.x * w, pt14.y * h); canvasCtx.lineTo(pt16.x * w, pt16.y * h); canvasCtx.stroke();
-                }
-            }
-
             if (latestHandResults && latestHandResults.multiHandLandmarks) {
                 canvasCtx.shadowColor = colorTheme.handGlow; canvasCtx.strokeStyle = colorTheme.handLine; canvasCtx.lineWidth = 3;
                 const connections = window.HAND_CONNECTIONS || (typeof HAND_CONNECTIONS !== 'undefined' ? HAND_CONNECTIONS : null);
@@ -493,26 +449,20 @@
             });
         }
 
-        // 🎯 【關鍵修改】不再使用隱藏下載，改用長按圖片視窗
         function downloadPoster() {
             if (!fabricCanvas) return;
             
-            // 先隱藏正在編輯的選取框線
             fabricCanvas.discardActiveObject();
             fabricCanvas.requestRenderAll();
 
             setTimeout(() => {
-                // 將畫布轉成高畫質 PNG Base64 數據
                 const dataURL = fabricCanvas.toDataURL({
                     format: 'png',
                     quality: 1.0
                 });
 
-                // 把數據塞進彈出視窗的 <img> 標籤內
                 const downloadImg = document.getElementById('download-img');
                 downloadImg.src = dataURL;
-
-                // 顯示彈出遮罩層，讓使用者能安全長按儲存
                 document.getElementById('download-overlay').style.display = 'flex';
             }, 100);
         }
